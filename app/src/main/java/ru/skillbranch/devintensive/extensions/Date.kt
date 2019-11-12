@@ -2,71 +2,150 @@ package ru.skillbranch.devintensive.extensions
 
 import java.text.SimpleDateFormat
 import java.util.*
-import ru.skillbranch.devintensive.extensions.TimeUnits.*
+import kotlin.math.absoluteValue
 
-fun Date.format(pattern: String = "HH:mm:ss dd.MM.yy"): String {
+enum class TimeUnits {
+    SECOND, MINUTE, HOUR, DAY;
+    public fun plural(value: Int) : String {
+        return value.toString() + " " +
+                when{
+                    (this == SECOND) -> {
+                        when {
+                            (value != 11) && (value % 10 == 1)  -> "секунду"
+                            value > 4 && ((value in 5..20) || (value % 10 in 5..9) || (value % 10 == 0)) -> "секунд"
+                            else -> "секунды"
+                        }
+                    }
+                    (this == MINUTE) -> {
+                        when {
+                            (value != 11) && (value % 10 == 1)  -> "минуту"
+                            value > 4 && ((value in 5..20) || (value % 10 in 5..9) || (value % 10 == 0)) -> "минут"
+                            else -> "минуты"
+                        }
+                    }
+                    (this == HOUR) -> {
+                        when {
+                            (value != 11) && (value % 10 == 1)  -> "час"
+                            value > 4 && ((value in 5..20) || (value % 10 in 5..9) || (value % 10 == 0)) -> "часов"
+                            else -> "часа"
+                        }
+                    }
+                    (this == DAY) -> {
+                        when {
+                            (value != 11) && (value % 10 == 1)  -> "день"
+                            value > 4 && ((value in 5..20) || (value % 10 in 5..9) || (value % 10 == 0)) -> "дней"
+                            else -> "дня"
+                        }
+                    }
+                    else -> ""
+                }
+    }
+}
+
+fun Date.format(pattern:String ="HH:mm:ss dd.MM.yy"): String  {
     val dateFormat = SimpleDateFormat(pattern, Locale("ru"))
     return dateFormat.format(this)
 }
 
-fun Date.add(value: Int, units: TimeUnits = SECOND): Date {
-    this.time = this.time + (units.value * value)
+fun Date.add(value: Int, units: TimeUnits = TimeUnits.SECOND): Date {
+    var time = this.time
+    time += when (units) {
+        TimeUnits.SECOND -> value * 1000L
+        TimeUnits.MINUTE -> value * 60_000L
+        TimeUnits.HOUR -> value * 3_600_000L
+        TimeUnits.DAY -> value * 86_400_000L
+    }
+
+    this.time = time
     return this
 }
 
-fun Date.humanizeDiff(date: Date = Date()): String {
-    var prefix = ""
-    var postfix = ""
+val minutS = listOf<Long>(2,3,4,22,23,24,32,33,34)
+val minutU = listOf<Long>(21,31,41)
+val hourA = listOf<Long>(2,3,4,22)
+val hourOV = listOf<Long>(5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20)
 
-    var difference = date.time - this.time
+fun Date.humanizeDiff(): String? {
+    var delta_: Long = Math.round((this.time - Date().time) / 1000.0)
+    var timeUnit_ = TimeUnits.SECOND
 
-    if (difference < 0){
-        prefix = "через "
-        difference = -difference
-    } else {
-        postfix = " назад"
+    if (timeUnit_ == TimeUnits.SECOND && delta_.absoluteValue > 59) {
+        timeUnit_ = TimeUnits.MINUTE
+        delta_ /= 60
     }
 
-    return when(difference) {
-        in 0..1*SECOND.value -> "только что"
-        in 1*SECOND.value..45*SECOND.value -> "${prefix}несколько секунд$postfix"
-        in 45*SECOND.value..75*SECOND.value -> "${prefix}минуту$postfix"
-        in 75*SECOND.value..45*MINUTE.value -> "$prefix${MINUTE.plural(difference/MINUTE.value)}$postfix"
-        in 45*MINUTE.value..75*MINUTE.value -> "${prefix}час$postfix"
-        in 75*MINUTE.value..22*HOUR.value -> "$prefix${HOUR.plural(difference/HOUR.value)}$postfix"
-        in 22*HOUR.value..26*HOUR.value -> "${prefix}день$postfix"
-        in 26*HOUR.value..360*DAY.value -> "$prefix${DAY.plural(difference/DAY.value)}$postfix"
-        else -> if(date.time - this.time < 0) "более чем через год" else "более года назад"
-    }
-}
-
-enum class TimeUnits(val value: Long, private val ONE: String, private val FEW: String, private val MANY: String) {
-
-    SECOND(1000L,"секунду", "секунды", "секунд"),
-    MINUTE(1000L*60L, "минуту", "минуты", "минут"),
-    HOUR(1000L*60L*60L, "час", "часа", "часов"),
-    DAY(1000L*60L*60L*24L, "день", "дня", "дней");
-
-    fun plural(num: Long) : String {
-        return "$num ${this.getAmount(num)}"
+    if (timeUnit_ == TimeUnits.MINUTE && delta_.absoluteValue > 59) {
+        timeUnit_ = TimeUnits.HOUR
+        delta_ /= 60
     }
 
-    private fun getAmount(num: Long) : String {
-        return when{
-            num in 5..20L -> MANY
-            num%10  == 1L  -> ONE
-            num%10 in 2..4L  -> FEW
-            else -> MANY
+    if (timeUnit_ == TimeUnits.HOUR && delta_.absoluteValue > 23) {
+        timeUnit_ = TimeUnits.DAY
+        delta_ /= 24
+    }
+
+    val deltaAbs = delta_.absoluteValue
+
+    return when (timeUnit_) {
+        TimeUnits.SECOND -> when(delta_) {
+            in -1..1 -> "только что"
+            in 2..45 -> "через несколько секунд"
+            in -45..-2 -> "несколько секунд назад"
+            in -60..-46 -> "минуту назад"
+            in 46..60 -> "через минуту"
+            else -> null
+        }
+
+        TimeUnits.MINUTE -> when {
+            delta_ == -1L -> "минуту назад"
+            delta_ == 1L -> "через минуту"
+            minutS.contains(deltaAbs) -> when (delta_ < 0) {
+                true -> "${deltaAbs} минуты назад"
+                false -> "через ${deltaAbs} минуты"
+            }
+            minutU.contains(deltaAbs) -> when (delta_ < 0) {
+                true -> "${deltaAbs} минуту назад"
+                false -> "через ${deltaAbs} минуту"
+            }
+            delta_ in -60..-46 -> "час назад"
+            delta_ in 46..60 -> "через час"
+            delta_ in -45..-5 -> "${deltaAbs} минут назад"
+            delta_ in 5..45 -> "через ${deltaAbs} минут"
+            else -> null
+        }
+
+        TimeUnits.HOUR -> when {
+            delta_ == -1L -> "час назад"
+            delta_ == 1L -> "через час"
+            delta_ == -21L -> "21 час назад"
+            delta_ == 21L -> "через 21 час"
+            hourA.contains(deltaAbs) -> when (delta_ < 0) {
+                true -> "${deltaAbs} часа назад"
+                false -> "через ${deltaAbs} часа"
+            }
+            hourOV.contains(deltaAbs) -> when (delta_ < 0) {
+                true -> "${deltaAbs} часов назад"
+                false -> "через ${deltaAbs} часов"
+            }
+            delta_ == -23L -> "день назад"
+            delta_ ==  23L -> "через день"
+            else -> null
+        }
+
+        TimeUnits.DAY -> when {
+            delta_ == -1L -> "день назад"
+            delta_ == 1L -> "через день"
+            delta_ <-360 -> "более года назад"
+            delta_ > 360 -> "более чем через год"
+            deltaAbs % 10 in 2..4 ->  when (delta_ < 0) {
+                true -> "${deltaAbs} дня назад"
+                false -> "через ${deltaAbs} дня"
+            }
+            deltaAbs % 10 in 5..9 || deltaAbs % 10 == 0L ->  when (delta_ < 0) {
+                true -> "${deltaAbs} дней назад"
+                false -> "через ${deltaAbs} дней"
+            }
+            else -> null
         }
     }
-}
-
-fun Date.shortFormat(): String? {
-    val pattern = if (this.issSameDay(Date())) "HH:mm" else "dd.MM.yy"
-    val dateFormat = SimpleDateFormat(pattern, Locale("ru"))
-    return dateFormat.format(this)
-}
-
-fun Date.issSameDay(date: Date) : Boolean {
-    return this.time/ DAY.value == date.time/ DAY.value
 }
